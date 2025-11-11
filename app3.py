@@ -132,46 +132,19 @@ if st.session_state.selected_question_index is not None:
     st.sidebar.markdown(f"<div class='sidebar-answer'>{entry['answer']}</div>", unsafe_allow_html=True)
 
 # LOADING FILES FROM S3
-with st.expander("🧩 S3 Auto-Load Debug Info", expanded=False):
-    S3_BUCKET_NAME = st.secrets["s3_bucket"]
-    os.environ["s3_bucket"] = S3_BUCKET_NAME
-    if not st.session_state.s3_loaded:
-        st.info(f"Fetching documents from `{S3_BUCKET_NAME}` ...")
-        s3_text, s3_dfs, debug_output = load_public_s3_files(S3_BUCKET_NAME)
-        st.session_state.uploaded_text += "\n" + s3_text
-        st.session_state.dataframes.extend(s3_dfs)
-        st.session_state.s3_loaded = True
-        st.code(debug_output, language="bash")
-    else:
-        st.success("✅ S3 data already loaded.")
-        st.code("Loaded from session cache.", language="bash")
+# with st.expander("🧩 S3 Auto-Load Debug Info", expanded=False):
+S3_BUCKET_NAME = st.secrets["s3_bucket"]
+os.environ["s3_bucket"] = S3_BUCKET_NAME
+if not st.session_state.s3_loaded:
+    s3_text, s3_dfs, debug_output = load_public_s3_files(S3_BUCKET_NAME)
+    st.session_state.uploaded_text += "\n" + s3_text
+    st.session_state.dataframes.extend(s3_dfs)
+    st.session_state.s3_loaded = True
+    # st.code(debug_output, language="bash")
+# else:
+    # st.success("✅ S3 data already loaded.")
+    # st.code("Loaded from session cache.", language="bash")
 
-# 📂 FILE UPLOAD (UI)
-st.divider()
-st.markdown("### 📂 Upload Files")
-uploaded_files = st.file_uploader(
-    "Upload PDFs or CSVs",
-    type=["pdf", "csv"],
-    accept_multiple_files=True
-)
-
-if uploaded_files:
-    all_text = st.session_state.uploaded_text
-    dfs = st.session_state.dataframes
-    for file in uploaded_files:
-        if file.name.endswith(".pdf"):
-            pdf = fitz.open(stream=file.read(), filetype="pdf")
-            text = "".join([page.get_text("text") for page in pdf])
-            all_text += f"\n\n### From {file.name}:\n{text}"
-        elif file.name.endswith(".csv"):
-            df = pd.read_csv(file)
-            dfs.append(df)
-            st.write(f"📄 **Preview of {file.name}:**")
-            st.dataframe(df.head())
-            all_text += f"\n\n### From {file.name}:\n{df.to_string(index=False)}"
-    st.session_state.uploaded_text = all_text
-    st.session_state.dataframes = dfs
-    st.success("✅ Uploaded files successfully added!")
 
 # 🎨 CHAT UI STYLING
 st.markdown("""
@@ -201,7 +174,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📈 Financial Insights Chatbot")
-st.caption("Auto-loads from S3 + Uploads via UI → Ask questions → Get analytical insights + charts (Groq Llama 3.3)")
+st.caption("Auto-loads from S3 → Ask questions → Get analytical insights + charts (Groq Llama 3.3)")
 
 # 💬 CHAT INPUT
 question = st.chat_input("💬 Ask a question about your data...")
