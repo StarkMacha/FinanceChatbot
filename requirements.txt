@@ -3,5 +3,8 @@ pandas
 pymupdf
 plotly
 groq
+python-dotenv
 requests
+lxml
 python-docx
+Pillow
