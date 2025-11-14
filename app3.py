@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from io import BytesIO
 import re
 from unicodedata import normalize as unormalize
+from docx import Document as DocxDocument
 
 # ⚙️ Load environment variables
 load_dotenv()
@@ -145,6 +146,17 @@ def load_files_from_s3(bucket_url):
                 total_files += 1
             except Exception as e:
                 st.warning(f"⚠ Unable to read CSV {key}: {e}")
+
+        elif key.lower().endswith(".docx") or key.lower().endswith(".doc"):
+            try:
+                doc = DocxDocument(BytesIO(file_data.content))
+                # Extract paragraphs (ignores tables unless added below)
+                paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+                text = "\n".join(paragraphs)
+                all_text += f"\n\n### From {key}:\n{text}"
+                total_files += 1
+            except Exception as e:
+                st.warning(f"⚠ Unable to read DOC/DOCX {key}: {e}")
 
     return all_text, dfs, total_files
 
