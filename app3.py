@@ -192,7 +192,9 @@ if question and (
     5. If visualization is requested, generate charts using the uploaded data only.
     6. Never hallucinate or assume values not present in the dataset.
     7. Do not provide opinions or predictions beyond the data.
-    8. If the question is irrelevant, don't reply unnecessary data, just answer exactly according to the question
+    8. If question is about forecasting future data based on existing data, try to give answer.
+    9. If the question is irrelevant, don't reply unnecessary data, just answer exactly according to the question
+    
     Guidelines:
     1. Respond directly with the final insights — do NOT describe your process.
     2. Use precise, professional business language.
