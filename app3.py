@@ -4,136 +4,178 @@ import fitz  # PyMuPDF
 import plotly.express as px
 from groq import Groq
 import json
-from io import BytesIO
-import requests
-from docx import Document as DocxDocument
-import xml.etree.ElementTree as ET
 import os
-
-st.set_page_config(page_title="📊 DocSense AI", layout="wide")
-
+import re
+import requests
+import xml.etree.ElementTree as ET
+from io import BytesIO
+from docx import Document as DocxDocument
+ 
+# ⚙️ Page Config
+# -------------------------------
+st.set_page_config(page_title="DocSense AI Chatbot", layout="wide")
+ 
+# 🌐 Groq API Configuration
+# -------------------------------
 GROQ_API_KEY = st.secrets["API_KEY"]
 os.environ["API_KEY"] = GROQ_API_KEY
 client = Groq(api_key=GROQ_API_KEY)
+ 
+# SESSION STATE INIT
+# -------------------------------
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "latest_answer" not in st.session_state:
+    st.session_state.latest_answer = ""
+if "uploaded_text" not in st.session_state:
+    st.session_state.uploaded_text = ""
+if "dataframes" not in st.session_state:
+    st.session_state.dataframes = []
+if "selected_question_index" not in st.session_state:
+    st.session_state.selected_question_index = None
+ 
+# Helper: Enhanced Sanitization
+# -------------------------------
+def sanitize_text(text):
+    """Remove HTML tags, Markdown symbols, and normalize whitespace."""
+    if not text:
+        return ""
+    # Remove HTML tags
+    text = re.sub(r'<[^>]*>', '', text)
+    # Remove Markdown symbols like **, __, #, *, >, ~, -
+    text = re.sub(r'[*_#>`~\-]', '', text)
+    # Normalize whitespace
+    return text.strip()
+ 
+# Helper: Fix DataFrame for Streamlit Arrow Compatibility
+# -------------------------------
+def fix_arrow_df(df: pd.DataFrame):
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].astype(str)
+    return df
+ 
+# SIDEBAR: Chat History
+# -------------------------------
+st.sidebar.header("Chat History")
+for i, entry in enumerate(st.session_state.chat_history):
+    if st.sidebar.button(f"Q{i+1}: {entry['question']}", key=f"btn_{i}"):
+        st.session_state.selected_question_index = i
+if st.session_state.selected_question_index is not None:
+    selected = st.session_state.chat_history[st.session_state.selected_question_index]
+    st.sidebar.markdown("### Answer:")
+    st.sidebar.write(sanitize_text(selected["answer"]))
+ 
+# 📂 Load Files from S3
+# -------------------------------
+S3_BUCKET = "hr-buddy-genai"   # ← CHANGE THIS
+BASE_URL = f"https://{S3_BUCKET}.s3.amazonaws.com"
+# -----------------------------
+def load_s3_public_files():
+    """Load all PDFs / CSVs / DOCX from a PUBLIC S3 bucket."""
+    list_url = f"{BASE_URL}?list-type=2"
 
-# function to load public S3 fiels
-def load_public_s3_files(bucket_name):
-    """Loads all files (pdf, csv, doc, docx) from a public S3 bucket."""
-    base_url = f"https://{bucket_name}.s3.amazonaws.com"
+    response = requests.get(list_url)
+    if response.status_code != 200:
+        st.error(f"❌ Cannot list S3 bucket: {S3_BUCKET}. Make sure it is PUBLIC.")
+        st.stop()
+
+    root = ET.fromstring(response.text)
+    keys = [
+        elem.text for elem in root.findall(".//{http://s3.amazonaws.com/doc/2006-03-01/}Key")
+        if elem.text and not elem.text.endswith("/")
+    ]
+
+    if not keys:
+        st.error("❌ No files found in S3 bucket.")
+        st.stop()
+
     all_text = ""
     dfs = []
-    total_files = 0
-    debug_lines = []
 
-    try:
-        list_url = f"{base_url}?list-type=2"
-        r = requests.get(list_url)
-        if r.status_code != 200:
-            return "", [], 0, debug_lines
-        root = ET.fromstring(r.text)
-        keys = [e.text for e in root.findall(".//{http://s3.amazonaws.com/doc/2006-03-01/}Key")]
+    for key in keys:
+        file_url = f"{BASE_URL}/{key}"
+        file_data = requests.get(file_url)
 
-        for key in keys:
-            if not key or key.endswith("/"):
-                continue
-            file_url = f"{base_url}/{key}"
-            file_resp = requests.get(file_url)
-            if file_resp.status_code != 200:
-                continue
-            total_files += 1
-            file_bytes = BytesIO(file_resp.content)
+        if file_data.status_code != 200:
+            st.warning(f"⚠ Failed to download: {key}")
+            continue
 
-            if key.endswith(".pdf"):
+        file_bytes = BytesIO(file_data.content)
+
+        # ---- PDF ----
+        if key.lower().endswith(".pdf"):
+            try:
                 pdf = fitz.open(stream=file_bytes.read(), filetype="pdf")
-                text = "".join([page.get_text("text") for page in pdf])
+                text = "".join(page.get_text("text") for page in pdf)
                 all_text += f"\n\n### From {key}:\n{text}"
+            except Exception as e:
+                st.warning(f"⚠ Cannot read PDF {key}: {e}")
 
-            elif key.endswith(".csv"):
-                df = pd.read_csv(BytesIO(file_resp.content))
+        # ---- CSV ----
+        elif key.lower().endswith(".csv"):
+            try:
+                df = pd.read_csv(BytesIO(file_data.content))
                 dfs.append(df)
                 all_text += f"\n\n### From {key}:\n{df.to_string(index=False)}"
+            except Exception as e:
+                st.warning(f"⚠ Cannot read CSV {key}: {e}")
 
-            elif key.endswith(".doc") or key.endswith(".docx"):
+        # ---- DOCX/DOC ----
+        elif key.lower().endswith(".docx") or key.lower().endswith(".doc"):
+            try:
                 doc = DocxDocument(file_bytes)
                 text = "\n".join(p.text for p in doc.paragraphs)
                 all_text += f"\n\n### From {key}:\n{text}"
+            except Exception as e:
+                st.warning(f"⚠ Cannot read DOC/DOCX {key}: {e}")
 
-    except Exception as e:
-        pass
+    return all_text, dfs
 
-    return all_text.strip(), dfs, "\n".join(debug_lines)
+# 🟦 Load automatically at startup
+all_text, dfs = load_s3_public_files()
 
-def summarize_dataframes_for_context(dfs):
-    """Convert loaded DataFrames into a concise text summary for the LLM."""
-    if not dfs:
-        return ""
-    summaries = []
-    for i, df in enumerate(dfs):
+st.session_state.uploaded_text = all_text
+st.session_state.dataframes = dfs
+st.success("✅ Loaded all public S3 documents successfully!")
 
-        sample_text = df.head(5).to_string(index=False)
-        numeric_cols = df.select_dtypes(include='number').columns.tolist()
-        summary = f"""
-                CSV Dataset {i+1} Summary:
-                - Shape: {df.shape[0]} rows × {df.shape[1]} columns
-                - Columns: {', '.join(df.columns[:10])}
-                - Numeric Columns: {', '.join(numeric_cols[:10])}
-                - Sample Data (first 5 rows):
-                {sample_text}
-                """
-        if len(numeric_cols) > 0:
-            stats = df[numeric_cols].describe().to_string()
-            summary += f"\nDescriptive Stats:\n{stats}"
-        summaries.append(summary)
-    return "\n\n".join(summaries)
-
-
-# SESSION STATE INIT
-for key, default in {
-    "chat_history": [],
-    "latest_answer": "",
-    "selected_question_index": None,
-    "uploaded_text": "",
-    "dataframes": [],
-    "s3_loaded": False
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-# SIDEBAR: CHAT HISTORY
-st.sidebar.header("Chat History")
+# UPLOAD_DIR = "uploads"
+# if not os.path.exists(UPLOAD_DIR):
+#     st.error("Uploads directory not found. Create an 'uploads' folder.")
+#     st.stop()
+# existing_files = os.listdir(UPLOAD_DIR)
+# if not existing_files:
+#     st.error("No files found in uploads folder.")
+#     st.stop()
+ 
+# all_text = ""
+# dfs = []
+# for file_name in existing_files:
+#     file_path = os.path.join(UPLOAD_DIR, file_name)
+#     if file_name.endswith(".pdf"):
+#         pdf = fitz.open(file_path)
+#         text = "".join(page.get_text("text") for page in pdf)
+#         all_text += f"\n\n### From {file_name}:\n{text}"
+#     elif file_name.endswith(".csv"):
+#         df = pd.read_csv(file_path)
+#         dfs.append(df)
+#         all_text += f"\n\n### From {file_name}:\n{df.to_string(index=False)}"
+ 
+# st.session_state.uploaded_text = all_text
+# st.session_state.dataframes = dfs
+ 
+# -------------------------------
+# 🎨 Chat Interface Styling
+# -------------------------------
 st.markdown("""
 <style>
-.chat-bubble-user, .chat-bubble-ai, .sidebar-answer {
+.chat-bubble-user, .chat-bubble-ai {
     font-family: "Segoe UI", Arial, sans-serif;
     font-size: 16px;
     line-height: 1.5;
     white-space: pre-wrap;
     word-wrap: break-word;
 }
-</style>
-""", unsafe_allow_html=True)
-
-for i, entry in enumerate(st.session_state.chat_history):
-    if st.sidebar.button(f"Q{i+1}: {entry['question']}", key=f"btn_{i}"):
-        st.session_state.selected_question_index = i
-
-if st.session_state.selected_question_index is not None:
-    entry = st.session_state.chat_history[st.session_state.selected_question_index]
-    st.sidebar.markdown("<div class='sidebar-answer'><strong>Answer:</strong></div>", unsafe_allow_html=True)
-    st.sidebar.markdown(f"<div class='sidebar-answer'>{entry['answer']}</div>", unsafe_allow_html=True)
-
-# LOADING FILES FROM S3
-S3_BUCKET_NAME = "hr-buddy-genai"
-if not st.session_state.s3_loaded:
-    s3_text, s3_dfs, debug_output = load_public_s3_files(S3_BUCKET_NAME)
-    st.session_state.uploaded_text += "\n" + s3_text
-    st.session_state.dataframes.extend(s3_dfs)
-    st.session_state.s3_loaded = True
-
-
-# 🎨 CHAT UI STYLING
-st.markdown("""
-<style>
 .chat-bubble-user {
     background-color: #0078ff;
     color: white;
@@ -154,132 +196,148 @@ st.markdown("""
     max-width: 80%;
     align-self: flex-start;
 }
-.chat-container { display: flex; flex-direction: column; }
+.chat-container {
+    display: flex;
+    flex-direction: column;
+}
 </style>
 """, unsafe_allow_html=True)
-
-st.title("📈 DocSense AI")
-st.caption("Auto-loads from S3 → Ask questions → Get analytical insights + charts (Groq Llama 3.3)")
-
-# 💬 CHAT INPUT
-question = st.chat_input("💬 Ask a question about your data...")
-
-
-if question and (
-    not st.session_state.chat_history
-    or st.session_state.chat_history[-1]["question"] != question
-):
-    if not st.session_state.uploaded_text.strip():
-        st.warning("⚠️ No data available (S3 or uploads). Please check S3 access or upload a file.")
-        st.stop()
-
-    with st.spinner("Analyzing your files..."):
-
-        text_context = st.session_state.uploaded_text[:12000]
-        data_context = summarize_dataframes_for_context(st.session_state.dataframes)
-        context = text_context + "\n\n" + data_context
-        prompt = f"""
-    You are an AI assistant with strict rules.
-    Your task is to interpret business data (from text, tables, or CSV summaries)
-    and provide clear, concise, and insightful answers — similar to how ChatGPT responds.
  
-    RULES:
-    1. You must ONLY answer using the information provided in the DOCUMENT CONTEXT.
-    2. If the answer is not found in the context, reply with:
-    "I don't have enough information in the uploaded documents to answer that."
-    3. Do NOT use outside knowledge, web search, assumptions, or training data.
-    4. Be concise, factual, and reference the exact values from the documents.
-    5. If visualization is requested, generate charts using the uploaded data only.
-    6. Never hallucinate or assume values not present in the dataset.
-    7. Do not provide opinions or predictions beyond the data.
-    8. If question is about forecasting future data based on existing data, try to give answer.
-    9. If the question is irrelevant, don't reply unnecessary data, just answer exactly according to the question
-    
-    Guidelines:
-    1. Respond directly with the final insights — do NOT describe your process.
-    2. Use precise, professional business language.
-    3. If applicable, include numeric results (revenues, profits, trends, etc.) clearly.
-    4. Avoid filler phrases like "we need to filter" or "from the sample data".
-    5. If useful, include a well-structured JSON for visualization, with keys like:
-    - chart_type (bar, line, pie, scatter, area)
-    - relevant axes and values
-    - provide the scale like millions or relevant value for the axes
+st.title("DocSense AI Chatbot")
+#st.caption("Ask questions → Get insights + visualizations")
+ 
+# -------------------------------
+# 💬 Question Input
+# -------------------------------
+question = st.chat_input("💬 Ask a question about your data...")
+if question and (not st.session_state.chat_history or st.session_state.chat_history[-1]["question"] != question):
+    if not st.session_state.uploaded_text:
+        st.warning("No data available in uploads folder.")
+        st.stop()
+ 
+    with st.spinner("Analyzing your files..."):
+        context = st.session_state.uploaded_text[:12000]
+        prompt = f"""
+You are a financial analysis assistant.
+You are given ONLY the following data (in text, CSV, or extracted tables) and a user question.
+Do NOT use any information outside this data.
+If the answer cannot be found in the data, respond with: "The information is not available in the uploaded files."
+ 
+Your response MUST have ONLY these two blocks:
+<answer>
+...clean explanation with no numbers modified...
+</answer>
 
-    Example JSON format:
-    {{
-    "chart_type": "bar",
-    "Years": [2021, 2022, 2023],
-    "Revenue": [100, 150, 200],
-    "Profit": [20, 30, 45]
-    }}
+<json>
+...valid JSON only...
+</json>
 
-    Context:
-    {context}
+ JSON RULES (IMPORTANT):
+- JSON MUST be valid and parseable by Python json.loads().
+- No comments, no trailing commas, no text outside JSON.
+- Keys MUST be simple strings without spaces.
+- All numbers MUST be plain integers (e.g., 14015150), NOT strings ("14,015,150").
+- NEVER output commas inside numbers.
+- NEVER output formatted numbers like "14.0M" or "$57M".
+- If no chart is needed, output: {{}}
 
-    User Question:
-    {question}
+Example JSON format:
+<json>
+{{
+  "chart_type": "bar",
+  "col1": [2023, 2024],
+  "values": [5732599, 14015150]
+}}
+</json>
 
-    Now, provide a clear, insightful answer followed by (if relevant) a concise JSON for visualization.
-    """
+NEVER wrap numbers in quotes unless they are real text labels.
+
+DATA:
+{context}
+ 
+QUESTION:
+{question}
+"""
+ 
         try:
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
+                messages=[
+                    {"role": "system", "content": "Strictly use uploaded files only."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2
             )
-            answer = response.choices[0].message.content
-            json_start = answer.find("{")
-            json_end = answer.rfind("}")
-            chart_json = None
-            if json_start != -1 and json_end != -1:
-                try:
-                    json_str = answer[json_start:json_end+1]
-                    chart_json = json_str
-                except:
-                    chart_json = None
+            raw_answer = response.choices[0].message.content 
+            # Extract clean answer
+            a_start = raw_answer.find("<answer>")
+            a_end = raw_answer.find("</answer>")
+            clean_answer = raw_answer[a_start+8:a_end].strip() if a_start != -1 else raw_answer
+ 
         except Exception as e:
-            st.error(f"Error from Groq API: {e}")
+            st.error(f"Groq API error: {e}")
             st.stop()
-
+ 
+        # Save sanitized question and answer
         st.session_state.chat_history.append({
-            "question": question,
-            "answer": answer,
-            "chart_json": chart_json
+            "question": sanitize_text(question),
+            "answer": sanitize_text(clean_answer),
+            "raw_answer": raw_answer
         })
-
+ 
+# -------------------------------
+# 💬 Chat Display
+# -------------------------------
 st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
-
 for chat in st.session_state.chat_history:
-    # User bubble
-    st.markdown(f"<div class='chat-bubble-user'>{chat['question']}</div>", unsafe_allow_html=True)
-
-    # Assistant bubble
-    st.markdown(f"<div class='chat-bubble-ai'>{chat['answer']}</div>", unsafe_allow_html=True)
-
-    # If chart exists, render it here
-    if chat.get("chart_json"):
+    st.markdown(f"<div class='chat-bubble-user'>{sanitize_text(chat['question'])}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='chat-bubble-ai'>{sanitize_text(chat['answer'])}</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
+ 
+# -------------------------------
+# 📊 Visualization
+# -------------------------------
+if st.session_state.chat_history:
+    latest_raw = st.session_state.chat_history[-1]["raw_answer"]
+    json_start = latest_raw.find("<json>")
+    json_end = latest_raw.find("</json>")
+    if json_start != -1 and json_end != -1:
         try:
-            data = json.loads(chat["chart_json"])
+            json_str = latest_raw[json_start + 6:json_end].strip()
+            data = json.loads(json_str)
             chart_type = data.pop("chart_type", "line").lower()
             df = pd.DataFrame(data)
-
-            st.write("📊 **Visualization:**")
+            df = fix_arrow_df(df)
+            xcol = df.columns[0]
+            df[xcol] = df[xcol].astype(str)
+            st.subheader("📊 Visualization")
             st.dataframe(df)
-
+ 
+            # Plot Selection
             if chart_type == "bar":
-                fig = px.bar(df, x=df.columns[0], y=df.columns[1:], barmode="group")
+                fig = px.bar(df, x=xcol, y=df.columns[1:], barmode="group")
             elif chart_type == "pie":
-                fig = px.pie(df, names=df.columns[0], values=df.columns[1])
+                fig = px.pie(df, names=xcol, values=df.columns[1])
             elif chart_type == "scatter":
-                fig = px.scatter(df, x=df.columns[0], y=df.columns[1])
+                fig = px.scatter(df, x=xcol, y=df.columns[1])
             elif chart_type == "area":
-                fig = px.area(df, x=df.columns[0], y=df.columns[1:])
+                fig = px.area(df, x=df.xcol, y=df.columns[1:])
             else:
-                fig = px.line(df, x=df.columns[0], y=df.columns[1:], markers=True)
-
+                fig = px.line(df, x=xcol, y=df.columns[1:], markers=True)
+ 
+            fig.update_xaxes(type="category")
             st.plotly_chart(fig, use_container_width=True)
-
         except Exception as e:
-            st.warning(f"⚠️ Failed to render chart: {e}")
-
-st.markdown("</div>", unsafe_allow_html=True)
+            pass
+    else:
+        # CSV fallback
+        if st.session_state.dataframes:
+            df = st.session_state.dataframes[0]
+            df = fix_arrow_df(df)
+            xcol = df.columns[0]
+            df[xcol] = df[xcol].astype(str)
+            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+            if numeric_cols:
+                st.subheader("📊 CSV Data Visualization")
+                fig = px.line(df, x=xcol, y=numeric_cols, markers=True)
+                st.plotly_chart(fig, use_container_width=True)
