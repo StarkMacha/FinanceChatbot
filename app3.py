@@ -11,9 +11,32 @@ import xml.etree.ElementTree as ET
 from io import BytesIO
 from docx import Document as DocxDocument
  
+
 # ⚙️ Page Config
 # -------------------------------
 st.set_page_config(page_title="DocSense AI Chatbot", layout="wide")
+# st.title("DocSense AI Chatbot")
+st.markdown("""
+<style>
+.center-title {
+    text-align: center;
+    font-size: 46px;
+    font-weight: 700;
+    margin-top: 20px;
+}
+</style>
+<div class="center-title">
+    DocSense AI Chatbot
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div style="text-align:center; color: gray; font-size:18px;">
+Ask questions → Get insights + visualizations
+</div>
+""", unsafe_allow_html=True)
+
+# st.caption("Ask questions → Get insights + visualizations")
  
 # 🌐 Groq API Configuration
 # -------------------------------
@@ -137,7 +160,7 @@ all_text, dfs = load_s3_public_files()
 
 st.session_state.uploaded_text = all_text
 st.session_state.dataframes = dfs
-st.success("✅ Loaded all public S3 documents successfully!")
+st.success("✅ Loaded all S3 documents successfully!")
 
 # UPLOAD_DIR = "uploads"
 # if not os.path.exists(UPLOAD_DIR):
@@ -202,9 +225,6 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
- 
-st.title("DocSense AI Chatbot")
-#st.caption("Ask questions → Get insights + visualizations")
  
 # -------------------------------
 # 💬 Question Input
