@@ -333,7 +333,7 @@ for chat in st.session_state.chat_history:
     st.markdown(f"<div class='chat-bubble-user'>{sanitize_text(chat['question'])}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='chat-bubble-ai'>{sanitize_text(chat['answer'])}</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
- 
+
 # -------------------------------
 # 📊 Visualization
 # -------------------------------
@@ -341,106 +341,137 @@ if st.session_state.chat_history:
     latest_raw = st.session_state.chat_history[-1]["raw_answer"]
     json_start = latest_raw.find("<json>")
     json_end = latest_raw.find("</json>")
-    if json_start != -1 and json_end != -1:
-        try:
-            json_str = latest_raw[json_start + 6:json_end].strip()
-            data = json.loads(json_str)
+    json_str = latest_raw[json_start + 6:json_end].strip()
+    if json_str != "{}":
+        if json_start != -1 and json_end != -1:
+            try:
+                json_str = latest_raw[json_start + 6:json_end].strip()
+                data = json.loads(json_str)
 
-            # Extract chart type & currency symbol (if present)
-            chart_type = data.pop("chart_type", "line").lower() if isinstance(data, dict) else "line"
-            currency_symbol = data.pop("currency_symbol", "")
+                # Extract chart type & currency symbol (if present)
+                chart_type = data.pop("chart_type", "line").lower() if isinstance(data, dict) else "line"
+                currency_symbol = data.pop("currency_symbol", "")
 
-            # Build dataframe from returned JSON
-            df = pd.DataFrame(data)
-            # Try to coerce numeric columns
-            for c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="ignore")
+                # Build dataframe from returned JSON
+                df = pd.DataFrame(data)
+                # Try to coerce numeric columns
+                for c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="ignore")
 
-            df = fix_arrow_df(df)
-            xcol = df.columns[0]
-            df[xcol] = df[xcol].astype(str)
+                df = fix_arrow_df(df)
+                xcol = df.columns[0]
+                df[xcol] = df[xcol].astype(str)
 
-            st.subheader("📊 Visualization")
+                st.subheader("📊 Visualization")
 
-            # Show formatted table (with currency if provided)
-            display_df = formatted_display_df(df, currency_symbol)
-            st.dataframe(display_df)
+                # Show formatted table (with currency if provided)
+                display_df = formatted_display_df(df, currency_symbol)
+                st.dataframe(display_df)
 
-            # ---- Plot Selection with numeric labels & no M/K abbreviations ----
-            if chart_type == "bar":
-                fig = px.bar(
-                    df,
-                    x=xcol,
-                    y=df.columns[1:],
-                    barmode="group",
-                    title="📊 Bar Chart",
-                    text_auto=True,
-                )
-                fig.update_traces(
-                    textposition="outside",
-                    texttemplate=f"{currency_symbol}%{{y:,.0f}}",
-                    hovertemplate=f"%{{x}}<br>%{{fullData.name}}: {currency_symbol}%{{y:,.0f}}<extra></extra>",
-                    textfont_size=11,
-                )
-                fig.update_yaxes(tickformat=",.0f")
-                fig.update_layout(margin=dict(t=40, b=40))
+                # ---- Plot Selection with numeric labels & no M/K abbreviations ----
+                if chart_type == "bar":
+                    fig = px.bar(
+                        df,
+                        x=xcol,
+                        y=df.columns[1:],
+                        barmode="group",
+                        title="📊 Bar Chart",
+                        text_auto=True,
+                    )
+                    fig.update_traces(
+                        textposition="outside",
+                        texttemplate=f"{currency_symbol}%{{y:,.0f}}",
+                        hovertemplate=f"%{{x}}<br>%{{fullData.name}}: {currency_symbol}%{{y:,.0f}}<extra></extra>",
+                        textfont_size=11,
+                    )
+                    fig.update_yaxes(tickformat=",.0f")
+                    fig.update_layout(margin=dict(t=40, b=40))
 
-            elif chart_type == "pie":
-                value_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
-                fig = px.pie(df, names=xcol, values=value_col, title="🥧 Pie Chart")
-                fig.update_traces(
-                    textinfo="label+percent+value",
-                    texttemplate=f"%{{label}}: %{{percent}} ({currency_symbol}%{{value:,.0f}})",
-                    hovertemplate=f"%{{label}}<br>{currency_symbol}%{{value:,.0f}} (%{{percent}})<extra></extra>",
-                    textfont_size=12,
-                )
-                fig.update_layout(margin=dict(t=40, b=40))
+                elif chart_type == "pie":
+                    value_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+                    fig = px.pie(df, names=xcol, values=value_col, title="🥧 Pie Chart")
+                    fig.update_traces(
+                        textinfo="label+percent+value",
+                        texttemplate=f"%{{label}}: %{{percent}} ({currency_symbol}%{{value:,.0f}})",
+                        hovertemplate=f"%{{label}}<br>{currency_symbol}%{{value:,.0f}} (%{{percent}})<extra></extra>",
+                        textfont_size=12,
+                    )
+                    fig.update_layout(margin=dict(t=40, b=40))
 
-            elif chart_type == "scatter":
-                numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-                if len(numeric_cols) >= 1:
-                    ycol = numeric_cols[0]
+                elif chart_type == "scatter":
+                    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+                    if len(numeric_cols) >= 1:
+                        ycol = numeric_cols[0]
+                    else:
+                        ycol = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+                    fig = px.scatter(df, x=xcol, y=ycol, title="📉 Scatter Plot", text=ycol)
+                    fig.update_traces(
+                        textposition="top center",
+                        texttemplate=f"{currency_symbol}%{{y:,.0f}}",
+                        hovertemplate=f"%{{x}}<br>{currency_symbol}%{{y:,.0f}}<extra></extra>",
+                        marker=dict(size=8),
+                    )
+                    fig.update_yaxes(tickformat=",.0f")
+                    fig.update_layout(margin=dict(t=40, b=40))
+
+                elif chart_type == "area":
+                    fig = px.area(df, x=xcol, y=df.columns[1:], title="🌈 Area Chart")
+                    fig.update_traces(
+                        mode="lines+markers+text",
+                        texttemplate=f"{currency_symbol}%{{y:,.0f}}",
+                        textposition="top center",
+                        hovertemplate=f"%{{x}}<br>%{{fullData.name}}: {currency_symbol}%{{y:,.0f}}<extra></extra>",
+                    )
+                    fig.update_yaxes(tickformat=",.0f")
+                    fig.update_layout(margin=dict(t=40, b=40))
+
                 else:
-                    ycol = df.columns[1] if len(df.columns) > 1 else df.columns[0]
-                fig = px.scatter(df, x=xcol, y=ycol, title="📉 Scatter Plot", text=ycol)
-                fig.update_traces(
-                    textposition="top center",
-                    texttemplate=f"{currency_symbol}%{{y:,.0f}}",
-                    hovertemplate=f"%{{x}}<br>{currency_symbol}%{{y:,.0f}}<extra></extra>",
-                    marker=dict(size=8),
-                )
-                fig.update_yaxes(tickformat=",.0f")
-                fig.update_layout(margin=dict(t=40, b=40))
+                    # default line chart
+                    fig = px.line(df, x=xcol, y=df.columns[1:], markers=True, title="📈 Line Chart")
+                    fig.update_traces(
+                        mode="lines+markers+text",
+                        texttemplate=f"{currency_symbol}%{{y:,.0f}}",
+                        textposition="top center",
+                        hovertemplate=f"%{{x}}<br>%{{fullData.name}}: {currency_symbol}%{{y:,.0f}}<extra></extra>",
+                    )
+                    fig.update_yaxes(tickformat=",.0f")
+                    fig.update_layout(margin=dict(t=40, b=40))
 
-            elif chart_type == "area":
-                fig = px.area(df, x=xcol, y=df.columns[1:], title="🌈 Area Chart")
-                fig.update_traces(
-                    mode="lines+markers+text",
-                    texttemplate=f"{currency_symbol}%{{y:,.0f}}",
-                    textposition="top center",
-                    hovertemplate=f"%{{x}}<br>%{{fullData.name}}: {currency_symbol}%{{y:,.0f}}<extra></extra>",
-                )
-                fig.update_yaxes(tickformat=",.0f")
-                fig.update_layout(margin=dict(t=40, b=40))
+                fig.update_xaxes(type="category")
+                st.plotly_chart(fig, use_container_width=True)
 
-            else:
-                # default line chart
-                fig = px.line(df, x=xcol, y=df.columns[1:], markers=True, title="📈 Line Chart")
-                fig.update_traces(
-                    mode="lines+markers+text",
-                    texttemplate=f"{currency_symbol}%{{y:,.0f}}",
-                    textposition="top center",
-                    hovertemplate=f"%{{x}}<br>%{{fullData.name}}: {currency_symbol}%{{y:,.0f}}<extra></extra>",
-                )
-                fig.update_yaxes(tickformat=",.0f")
-                fig.update_layout(margin=dict(t=40, b=40))
-
-            fig.update_xaxes(type="category")
-            st.plotly_chart(fig, use_container_width=True)
-
-        except Exception as e:
-            st.warning(f"Visualization failed: {e}")
-            # CSV fallback if JSON can't be parsed
+            except Exception as e:
+                st.warning(f"Visualization failed: {e}")
+                # CSV fallback if JSON can't be parsed
+                if st.session_state.dataframes:
+                    df = st.session_state.dataframes[0]
+                    df = fix_arrow_df(df)
+                    xcol = df.columns[0]
+                    df[xcol] = df[xcol].astype(str)
+                    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+                    if numeric_cols:
+                        st.subheader("📊 CSV Data Visualization (fallback)")
+                        display_df = formatted_display_df(df[[xcol] + numeric_cols], "")
+                        st.dataframe(display_df)
+                        fig = px.bar(
+                            df,
+                            x=xcol,
+                            y=numeric_cols,
+                            barmode="group",
+                            title="📊 CSV Data Chart",
+                            text_auto=True,
+                        )
+                        fig.update_traces(
+                            textposition="outside",
+                            texttemplate="%{y:,.0f}",
+                            hovertemplate="%{x}<br>%{fullData.name}: %{y:,.0f}<extra></extra>",
+                            textfont_size=11,
+                        )
+                        fig.update_yaxes(tickformat=",.0f")
+                        fig.update_layout(margin=dict(t=40, b=40))
+                        st.plotly_chart(fig, use_container_width=True)
+        else:
+            # JSON not present — CSV fallback
             if st.session_state.dataframes:
                 df = st.session_state.dataframes[0]
                 df = fix_arrow_df(df)
@@ -448,45 +479,16 @@ if st.session_state.chat_history:
                 df[xcol] = df[xcol].astype(str)
                 numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
                 if numeric_cols:
-                    st.subheader("📊 CSV Data Visualization (fallback)")
+                    st.subheader("📊 CSV Data Visualization")
                     display_df = formatted_display_df(df[[xcol] + numeric_cols], "")
                     st.dataframe(display_df)
-                    fig = px.bar(
-                        df,
-                        x=xcol,
-                        y=numeric_cols,
-                        barmode="group",
-                        title="📊 CSV Data Chart",
-                        text_auto=True,
-                    )
+                    fig = px.line(df, x=xcol, y=numeric_cols, markers=True, title="📈 CSV Data Chart")
                     fig.update_traces(
-                        textposition="outside",
+                        mode="lines+markers+text",
                         texttemplate="%{y:,.0f}",
                         hovertemplate="%{x}<br>%{fullData.name}: %{y:,.0f}<extra></extra>",
-                        textfont_size=11,
+                        textposition="top center",
                     )
                     fig.update_yaxes(tickformat=",.0f")
                     fig.update_layout(margin=dict(t=40, b=40))
                     st.plotly_chart(fig, use_container_width=True)
-    else:
-        # JSON not present — CSV fallback
-        if st.session_state.dataframes:
-            df = st.session_state.dataframes[0]
-            df = fix_arrow_df(df)
-            xcol = df.columns[0]
-            df[xcol] = df[xcol].astype(str)
-            numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
-            if numeric_cols:
-                st.subheader("📊 CSV Data Visualization")
-                display_df = formatted_display_df(df[[xcol] + numeric_cols], "")
-                st.dataframe(display_df)
-                fig = px.line(df, x=xcol, y=numeric_cols, markers=True, title="📈 CSV Data Chart")
-                fig.update_traces(
-                    mode="lines+markers+text",
-                    texttemplate="%{y:,.0f}",
-                    hovertemplate="%{x}<br>%{fullData.name}: %{y:,.0f}<extra></extra>",
-                    textposition="top center",
-                )
-                fig.update_yaxes(tickformat=",.0f")
-                fig.update_layout(margin=dict(t=40, b=40))
-                st.plotly_chart(fig, use_container_width=True)
