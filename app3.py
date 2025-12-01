@@ -255,7 +255,7 @@ if question and (not st.session_state.chat_history or st.session_state.chat_hist
     with st.spinner("Analyzing your files..."):
         context = st.session_state.uploaded_text[:12000]
         prompt = f"""
-You are an AI assistant with strict rules.
+You are an AI assistant with strict rules who is expert in analysing documents.
 You are given ONLY the following data (in text, CSV, or extracted tables) and a user question.
 Do NOT use any information outside this data.
 If the answer cannot be found in the data, respond with: "The information is not available in the uploaded files."
@@ -291,6 +291,28 @@ Example JSON format:
 </json>
 
 NEVER wrap numbers in quotes unless they are real text labels.
+
+
+RULES:
+    1. You must ONLY answer using the information provided in the DOCUMENT CONTEXT.
+    2. Do not provide opinions beyond the data.
+    3. Do NOT use outside knowledge, web search, assumptions, or training data.
+    4. Be concise, factual, and reference the exact values from the documents.
+    5. If visualization is requested explicitly by the user, generate charts using the uploaded data only.
+    6. Never hallucinate or assume values not present in the dataset.
+    7. If the question is irrelevant, don't reply unnecessary data, just answer exactly according to the question.
+    8. If question is about forecasting future data based on existing data, try to give answer.
+
+Guardrails:
+1. Respond directly with the final insights — do NOT describe your process.
+2. Use precise, professional business language.
+3. If applicable, include numeric results (revenues, profits, trends, etc.) clearly.
+4. Avoid filler phrases like "we need to filter" or "from the sample data".
+5. If useful, provide charts for visualization, with keys like:
+- chart_type (bar, line, pie, scatter, area)
+- relevant axes and values
+- provide the scale like millions or relevant value for the axes
+
 
 DATA:
 {context}
