@@ -378,7 +378,7 @@ if st.session_state.chat_history:
             try:
                 json_str = latest_raw[json_start + 6:json_end].strip()
                 data = json.loads(json_str)
-                st.write(json_str)
+                # st.write(json_str)
 
                 # Extract chart type & currency symbol (if present)
                 chart_type = data.pop("chart_type", "line").lower() if isinstance(data, dict) else "line"
