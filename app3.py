@@ -13,9 +13,9 @@ from docx import Document as DocxDocument
  
 # ⚙️ Page Config
 # -------------------------------
-st.set_page_config(page_title="DocSense AI Chatbot", layout="wide")
+st.set_page_config(page_title="DocSense AI", layout="wide")
 
-# st.title("DocSense AI Chatbot")
+# st.title("DocSense AI")
 st.markdown("""
 <style>
 .center-title {
@@ -26,7 +26,7 @@ st.markdown("""
 }
 </style>
 <div class="center-title">
-    DocSense AI Chatbot
+    DocSense AI
 </div>
 """, unsafe_allow_html=True)
 
@@ -280,7 +280,7 @@ JSON RULES (IMPORTANT):
   with the exact symbol or text used (for example: "$", "₹", "Rs", "USD", "€", "¥").
 - If no chart is needed, output: {{}}
 
-Example JSON format:
+Example JSON format if chart info is needed:
 <json>
 {{
   "chart_type": "bar",
@@ -289,8 +289,15 @@ Example JSON format:
   "values": [5732599, 14015150]
 }}
 </json>
+Example JSON format if chart info is not needed:
+<json>
+{{}}
+</json>
 
 NEVER wrap numbers in quotes unless they are real text labels.
+Never miss the chart_type and currency_type keys, if they dont have any value, please give empty string
+please do not give keys names like col, values. Instead give the actual attribute names
+ like years, revenue or anything that the actual values are about
 
 
 RULES:
@@ -355,7 +362,7 @@ for chat in st.session_state.chat_history:
     st.markdown(f"<div class='chat-bubble-user'>{sanitize_text(chat['question'])}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='chat-bubble-ai'>{sanitize_text(chat['answer'])}</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
-
+ 
 # -------------------------------
 # 📊 Visualization
 # -------------------------------
@@ -369,6 +376,7 @@ if st.session_state.chat_history:
             try:
                 json_str = latest_raw[json_start + 6:json_end].strip()
                 data = json.loads(json_str)
+                # st.write(json_str)
 
                 # Extract chart type & currency symbol (if present)
                 chart_type = data.pop("chart_type", "line").lower() if isinstance(data, dict) else "line"
@@ -387,7 +395,9 @@ if st.session_state.chat_history:
                 st.subheader("📊 Visualization")
 
                 # Show formatted table (with currency if provided)
+                df.index = df.index + 1  # start index from 1
                 display_df = formatted_display_df(df, currency_symbol)
+
                 st.dataframe(display_df)
 
                 # ---- Plot Selection with numeric labels & no M/K abbreviations ----
