@@ -107,10 +107,12 @@ if st.session_state.selected_question_index is not None:
 # -------------------------------
 S3_BUCKET = "hr-buddy-genai"   # ← CHANGE THIS
 BASE_URL = f"https://{S3_BUCKET}.s3.amazonaws.com"
+FOLDER_PREFIX = "aarp/"   # 👈 only load files under this folder
+
 # -----------------------------
 def load_s3_public_files():
     """Load all PDFs / CSVs / DOCX from a PUBLIC S3 bucket."""
-    list_url = f"{BASE_URL}?list-type=2"
+    list_url = f"{BASE_URL}?list-type=2&prefix={FOLDER_PREFIX}"
 
     response = requests.get(list_url)
     if response.status_code != 200:
@@ -376,7 +378,7 @@ if st.session_state.chat_history:
             try:
                 json_str = latest_raw[json_start + 6:json_end].strip()
                 data = json.loads(json_str)
-                # st.write(json_str)
+                st.write(json_str)
 
                 # Extract chart type & currency symbol (if present)
                 chart_type = data.pop("chart_type", "line").lower() if isinstance(data, dict) else "line"
@@ -384,6 +386,20 @@ if st.session_state.chat_history:
 
                 # Build dataframe from returned JSON
                 df = pd.DataFrame(data)
+                # if isinstance(data, dict):
+                #     # all remaining values are scalars? -> make Metric/Value table
+                #     if all(not isinstance(v, (list, tuple, dict)) for v in data.values()):
+                #         df = pd.DataFrame(
+                #             {
+                #                 "Metric": list(data.keys()),
+                #                 "Value": list(data.values()),
+                #             }
+                #         )
+                #     else:
+                #         df = pd.DataFrame(data)
+                # else:
+                #     df = pd.DataFrame(data)
+
                 # Try to coerce numeric columns
                 for c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors="ignore")
@@ -473,7 +489,7 @@ if st.session_state.chat_history:
                 st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
-                # st.warning(f"Visualization failed: {e}")
+                st.warning(f"Visualization failed: {e}")
                 # CSV fallback if JSON can't be parsed
                 if st.session_state.dataframes:
                     df = st.session_state.dataframes[0]
