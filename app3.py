@@ -473,7 +473,7 @@ if st.session_state.chat_history:
                 st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
-                st.warning(f"Visualization failed: {e}")
+                # st.warning(f"Visualization failed: {e}")
                 # CSV fallback if JSON can't be parsed
                 if st.session_state.dataframes:
                     df = st.session_state.dataframes[0]
