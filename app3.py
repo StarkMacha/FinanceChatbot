@@ -171,40 +171,40 @@ def load_s3_public_files():
 
     return all_text, dfs
 
-# 🟦 Load automatically at startup
-all_text, dfs = load_s3_public_files()
+# # 🟦 Load automatically at startup
+# all_text, dfs = load_s3_public_files()
 
-st.session_state.uploaded_text = all_text
-st.session_state.dataframes = dfs
-st.success("✅ Loaded all S3 documents successfully!")
-
-# # -------------------------------
-# # 📂 Load files from local uploads folder
-# # -------------------------------
-# UPLOAD_DIR = "uploads"
-# if not os.path.exists(UPLOAD_DIR):
-#     st.error("Uploads directory not found. Create an 'uploads' folder.")
-#     st.stop()
-# existing_files = os.listdir(UPLOAD_DIR)
-# if not existing_files:
-#     st.error("No files found in uploads folder.")
-#     st.stop()
- 
-# all_text = ""
-# dfs = []
-# for file_name in existing_files:
-#     file_path = os.path.join(UPLOAD_DIR, file_name)
-#     if file_name.endswith(".pdf"):
-#         pdf = fitz.open(file_path)
-#         text = "".join(page.get_text("text") for page in pdf)
-#         all_text += f"\n\n### From {file_name}:\n{text}"
-#     elif file_name.endswith(".csv"):
-#         df = pd.read_csv(file_path)
-#         dfs.append(df)
-#         all_text += f"\n\n### From {file_name}:\n{df.to_string(index=False)}"
- 
 # st.session_state.uploaded_text = all_text
 # st.session_state.dataframes = dfs
+# st.success("✅ Loaded all S3 documents successfully!")
+
+# -------------------------------
+# 📂 Load files from local uploads folder
+# -------------------------------
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    st.error("Uploads directory not found. Create an 'uploads' folder.")
+    st.stop()
+existing_files = os.listdir(UPLOAD_DIR)
+if not existing_files:
+    st.error("No files found in uploads folder.")
+    st.stop()
+ 
+all_text = ""
+dfs = []
+for file_name in existing_files:
+    file_path = os.path.join(UPLOAD_DIR, file_name)
+    if file_name.endswith(".pdf"):
+        pdf = fitz.open(file_path)
+        text = "".join(page.get_text("text") for page in pdf)
+        all_text += f"\n\n### From {file_name}:\n{text}"
+    elif file_name.endswith(".csv"):
+        df = pd.read_csv(file_path)
+        dfs.append(df)
+        all_text += f"\n\n### From {file_name}:\n{df.to_string(index=False)}"
+ 
+st.session_state.uploaded_text = all_text
+st.session_state.dataframes = dfs
  
 # -------------------------------
 # 🎨 Chat Interface Styling
